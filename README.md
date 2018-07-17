@@ -1,12 +1,15 @@
-# noble
+# ![noble](assets/noble-logo.png)
 
-[![Gitter](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/sandeepmistry/noble?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![Build Status](https://travis-ci.org/noble/noble.svg?branch=master)](https://travis-ci.org/noble/noble)
+[![Gitter](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/sandeepmistry/noble?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge) [![OpenCollective](https://opencollective.com/noble/backers/badge.svg)](#backers)
+[![OpenCollective](https://opencollective.com/noble/sponsors/badge.svg)](#sponsors)
+
 
 A Node.js BLE (Bluetooth Low Energy) central module.
 
 Want to implement a peripheral? Checkout [bleno](https://github.com/sandeepmistry/bleno)
 
-__Note:__ Mac OS X, Linux and Windows are currently the only supported OSes. Other platforms may be developed later on.
+__Note:__ macOS / Mac OS X, Linux, FreeBSD and Windows are currently the only supported OSes. Other platforms may be developed later on.
 
 ## Prerequisites
 
@@ -39,26 +42,60 @@ sudo yum install bluez bluez-libs bluez-libs-devel
 
 See [Configure Intel Edison for Bluetooth LE (Smart) Development](http://rexstjohn.com/configure-intel-edison-for-bluetooth-le-smart-development/)
 
+### FreeBSD
+
+Make sure you have GNU Make:
+
+```sh
+sudo pkg install gmake
+```
+
+Disable automatic loading of the default Bluetooth stack by putting [no-ubt.conf](https://gist.github.com/myfreeweb/44f4f3e791a057bc4f3619a166a03b87) into ```/usr/local/etc/devd/no-ubt.conf``` and restarting devd (```sudo service devd restart```).
+
+Unload ```ng_ubt``` kernel module if already loaded:
+
+```sh
+sudo kldunload ng_ubt
+```
+
+Make sure you have read and write permissions on the ```/dev/usb/*``` device that corresponds to your Bluetooth adapter.
+
 ### Windows
 
- * [node-gyp requirements for Windows](https://github.com/TooTallNate/node-gyp#installation)
-   * Python 2.7
-   * Visual Studio ([Express](https://www.visualstudio.com/en-us/products/visual-studio-express-vs.aspx))
- * [node-bluetooth-hci-socket prerequisites](https://github.com/sandeepmistry/node-bluetooth-hci-socket#windows)
+[node-gyp requirements for Windows](https://github.com/TooTallNate/node-gyp#installation)
+
+Install the required tools and configurations using Microsoft's [windows-build-tools](https://github.com/felixrieseberg/windows-build-tools) from an elevated PowerShell or cmd.exe (run as Administrator).
+
+```cmd
+npm install --global --production windows-build-tools
+```
+
+[node-bluetooth-hci-socket prerequisites](https://github.com/sandeepmistry/node-bluetooth-hci-socket#windows)
    * Compatible Bluetooth 4.0 USB adapter
    * [WinUSB](https://msdn.microsoft.com/en-ca/library/windows/hardware/ff540196(v=vs.85).aspx) driver setup for Bluetooth 4.0 USB adapter, using [Zadig tool](http://zadig.akeo.ie/)
 
-See [@don](https://github.com/don)'s set up guide on [Bluetooth LE with Node.js and Noble on Windows](https://www.youtube.com/watch?v=mL9B8wuEdms).
+See [@don](https://github.com/don)'s set up guide on [Bluetooth LE with Node.js and Noble on Windows](https://www.youtube.com/watch?v=mL9B8wuEdms&feature=youtu.be&t=1m46s)
 
 ## Notes
 
 ### Maximum simultaneous connections
 
+This limit is imposed upon by the Bluetooth adapter hardware as well as it's firmware.
+
 | Platform |     |
 | :------- | --- |
 | OS X 10.11 (El Capitan) | 6 |
-| Linux/Windows - Adapter dependent | |
-| | 5 (CSR based adapter) |
+| Linux/Windows - Adapter dependent | 5 (CSR based adapter) |
+
+### Adapter specific known issues
+
+Some BLE adapters cannot connect to a peripheral while they are scanning (examples below). You will get the following messages when trying to connect :
+
+Sena UD-100 (Cambridge Silicon Radio, Ltd Bluetooth Dongle (HCI mode)) : `Error: Command disallowed`
+
+Intel Dual Band Wireless-AC 7260 (Intel Corporation Wireless 7260 (rev 73)) : `Error: Connection Rejected due to Limited Resources (0xd)`
+
+You need to stop scanning before trying to connect in order to solve this issue.
 
 ## Install
 
@@ -129,7 +166,7 @@ peripheral.discoverServices(serviceUUIDs[, callback(error, services)]); // parti
 ##### Discover all services and characteristics
 
 ```javascript
-peripheral.discoverAllServicesAndCharacteristics([callback(error, services, characteristics));
+peripheral.discoverAllServicesAndCharacteristics([callback(error, services, characteristics)]);
 ```
 
 ##### Discover some services and characteristics
@@ -170,8 +207,12 @@ characteristic.read([callback(error, data)]);
 ##### Write
 
 ```javascript
-characteristic.write(data, notify[, callback(error)]); // data is a buffer, notify is true|false
+characteristic.write(data, withoutResponse[, callback(error)]); // data is a buffer, withoutResponse is true|false
 ```
+
+* ```withoutResponse```:
+  * ```false```: send a write request, used with "write" characteristic property
+  * ```true```: send a write command, used with "write without response" characteristic property
 
 ##### Broadcast
 
@@ -179,13 +220,22 @@ characteristic.write(data, notify[, callback(error)]); // data is a buffer, noti
 characteristic.broadcast(broadcast[, callback(error)]); // broadcast is true|false
 ```
 
-##### Notify
+##### Subscribe
 
 ```javascript
-characteristic.notify(notify[, callback(error)]); // notify is true|false
+characteristic.subscribe([callback(error)]);
 ```
 
-  * allows notification to trigger `'data'` event
+  * subscribe to a characteristic, triggers `'data'` events when peripheral sends an notification or indication
+  * use for characteristics with notify or indicate properties
+
+##### Unsubscribe
+
+```javascript
+characteristic.unsubscribe([callback(error)]);
+```
+
+  * unsubscribe to a characteristic
   * use for characteristics with notify or indicate properties
 
 ##### Discover descriptors
@@ -260,6 +310,7 @@ peripheral = {
     localName: "<name>",
     txPowerLevel: <int>,
     serviceUuids: ["<service UUID>", ...],
+    serviceSolicitationUuid: ["<service solicitation UUID>", ...],
     manufacturerData: <Buffer>,
     serviceData: [
         {
@@ -274,6 +325,8 @@ peripheral = {
 
 noble.on('discover', callback(peripheral));
 ```
+
+__Note:__ on OS X the address will be set to 'unknown' if the device has not been connected previously.
 
 #### Warnings
 
@@ -338,6 +391,8 @@ characteristic.on('data', callback(data, isNotification));
 
 characteristic.once('read', callback(data, isNotification)); // legacy
 ```
+
+**Note:** `isNotification` event parameter value MAY be `undefined` depending on platform support. The parameter is **deprecated** after version 1.8.1, and not supported when on macOS High Sierra and later.
 
 ##### Write
 
@@ -416,12 +471,101 @@ sudo NOBLE_HCI_DEVICE_ID=1 node <your file>.js
 
 ### Reporting all HCI events
 
-By default noble waits for both the advertisement data and scan response data for each Bluetooth address. If your device does not use scan response the following enviroment variable can be used to bypass it.
+By default noble waits for both the advertisement data and scan response data for each Bluetooth address. If your device does not use scan response the following environment variable can be used to bypass it.
 
 
 ```sh
 sudo NOBLE_REPORT_ALL_HCI_EVENTS=1 node <your file>.js
 ```
+
+### bleno compatibility
+
+By default noble will respond with an error whenever a GATT request message is received. If your intention is to use bleno in tandem with noble, the following environment variable can be used to bypass this functionality. __Note:__ this requires a Bluetooth 4.1 adapter.
+
+```sh
+sudo NOBLE_MULTI_ROLE=1 node <your file>.js
+```
+
+
+## Advanced usage
+
+### Override default bindings
+
+By default, noble will select bindings to communicate with Bluetooth devices depending on your platform. If you prefer to specify what bindings noble should use:
+
+```javascript
+var noble = require('noble/with-bindings')(require('./my-custom-bindings'));
+```
+
+## Backers
+
+Support us with a monthly donation and help us continue our activities. [[Become a backer](https://opencollective.com/noble#backer)]
+
+<a href="https://opencollective.com/noble/backer/0/website" target="_blank"><img src="https://opencollective.com/noble/backer/0/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/1/website" target="_blank"><img src="https://opencollective.com/noble/backer/1/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/2/website" target="_blank"><img src="https://opencollective.com/noble/backer/2/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/3/website" target="_blank"><img src="https://opencollective.com/noble/backer/3/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/4/website" target="_blank"><img src="https://opencollective.com/noble/backer/4/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/5/website" target="_blank"><img src="https://opencollective.com/noble/backer/5/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/6/website" target="_blank"><img src="https://opencollective.com/noble/backer/6/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/7/website" target="_blank"><img src="https://opencollective.com/noble/backer/7/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/8/website" target="_blank"><img src="https://opencollective.com/noble/backer/8/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/9/website" target="_blank"><img src="https://opencollective.com/noble/backer/9/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/10/website" target="_blank"><img src="https://opencollective.com/noble/backer/10/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/11/website" target="_blank"><img src="https://opencollective.com/noble/backer/11/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/12/website" target="_blank"><img src="https://opencollective.com/noble/backer/12/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/13/website" target="_blank"><img src="https://opencollective.com/noble/backer/13/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/14/website" target="_blank"><img src="https://opencollective.com/noble/backer/14/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/15/website" target="_blank"><img src="https://opencollective.com/noble/backer/15/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/16/website" target="_blank"><img src="https://opencollective.com/noble/backer/16/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/17/website" target="_blank"><img src="https://opencollective.com/noble/backer/17/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/18/website" target="_blank"><img src="https://opencollective.com/noble/backer/18/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/19/website" target="_blank"><img src="https://opencollective.com/noble/backer/19/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/20/website" target="_blank"><img src="https://opencollective.com/noble/backer/20/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/21/website" target="_blank"><img src="https://opencollective.com/noble/backer/21/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/22/website" target="_blank"><img src="https://opencollective.com/noble/backer/22/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/23/website" target="_blank"><img src="https://opencollective.com/noble/backer/23/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/24/website" target="_blank"><img src="https://opencollective.com/noble/backer/24/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/25/website" target="_blank"><img src="https://opencollective.com/noble/backer/25/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/26/website" target="_blank"><img src="https://opencollective.com/noble/backer/26/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/27/website" target="_blank"><img src="https://opencollective.com/noble/backer/27/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/28/website" target="_blank"><img src="https://opencollective.com/noble/backer/28/avatar.svg"></a>
+<a href="https://opencollective.com/noble/backer/29/website" target="_blank"><img src="https://opencollective.com/noble/backer/29/avatar.svg"></a>
+
+## Sponsors
+
+Become a sponsor and get your logo on our README on Github with a link to your site. [[Become a sponsor](https://opencollective.com/noble#sponsor)]
+
+<a href="https://opencollective.com/noble/sponsor/0/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/0/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/1/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/1/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/2/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/2/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/3/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/3/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/4/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/4/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/5/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/5/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/6/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/6/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/7/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/7/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/8/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/8/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/9/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/9/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/10/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/10/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/11/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/11/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/12/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/12/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/13/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/13/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/14/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/14/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/15/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/15/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/16/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/16/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/17/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/17/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/18/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/18/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/19/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/19/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/20/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/20/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/21/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/21/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/22/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/22/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/23/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/23/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/24/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/24/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/25/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/25/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/26/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/26/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/27/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/27/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/28/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/28/avatar.svg"></a>
+<a href="https://opencollective.com/noble/sponsor/29/website" target="_blank"><img src="https://opencollective.com/noble/sponsor/29/avatar.svg"></a>
 
 ## Useful Links
 
@@ -440,4 +584,3 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 [![Analytics](https://ga-beacon.appspot.com/UA-56089547-1/sandeepmistry/noble?pixel)](https://github.com/igrigorik/ga-beacon)
-
